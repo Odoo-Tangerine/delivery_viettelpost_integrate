@@ -1,157 +1,130 @@
 # -*- coding: utf-8 -*-
 import json
+import math
 from dataclasses import dataclass
-from odoo import _
 from odoo.tools.safe_eval import safe_eval
-from odoo.addons.tangerine_delivery_base.settings.utils import URLBuilder, datetime_to_rfc3339
 from odoo.exceptions import UserError
+from odoo.addons.tangerine_delivery_base.settings.utils import URLBuilder
 from .connection import Connection
 from ..settings.constants import settings
-from ..schemas.grab_schemas import (
-    TokenRequest, TokenResponse,
-    DeliveryQuotesRequest, DeliveryQuotesResponse,
-    CreateDeliveryRequest, CreateDeliveryResponse,
-)
 
 
 @dataclass
 class Client:
     conn: Connection
 
-    def _build_header(self, route_id) -> dict[str, str]:
+    def _build_header(self, route_id, token):
         headers = json.loads(safe_eval(route_id.headers))
-        if route_id.code != settings.oauth_route_code:
-            headers.update({'Authorization': f'{self.conn.provider.grab_token_type} {self.conn.provider.access_token}'})
+        if route_id.code == settings.get_long_term_token_route.value and token:
+            headers.update({'Token': token})
+        elif route_id.is_need_access_token:
+            headers.update({'Token': self.conn.provider.access_token})
         return headers
 
-    def _payload_get_token(self) -> TokenRequest:
-        return TokenRequest(
-            client_id=self.conn.provider.grab_client_id,
-            client_secret=self.conn.provider.grab_client_secret,
-            grant_type=self.conn.provider.grab_grant_type,
-            scope=self.conn.provider.grab_scope
-        )
+    def _payload_get_token(self):
+        return {
+            'USERNAME': self.conn.provider.viettelpost_username,
+            'PASSWORD': self.conn.provider.viettelpost_password
+        }
 
-    def _execute(self, route_id, payload):
+    @staticmethod
+    def _validate_response(response):
+        if response.get('error'):
+            raise UserError(response.get('message'))
+        return response.get('data')
+
+    def _execute(self, route_id, params=None, payload=None, token=None):
         return self.conn.execute_restful(
             url=URLBuilder.builder(
                 host=self.conn.provider.domain,
-                routes=[route_id.route]
+                routes=[route_id.route],
+                params=params
             ),
-            headers=self._build_header(route_id),
+            headers=self._build_header(route_id, token),
             method=route_id.method,
-            **payload.model_dump(exclude_none=True)
+            **payload or {}
         )
 
-    def get_access_token(self, route_id) -> TokenResponse:
-        return TokenResponse(**self._execute(route_id, self._payload_get_token()))
+    def get_short_term_access_token(self, route_id):
+        return self._validate_response(self._execute(route_id=route_id, payload=self._payload_get_token()))
+
+    def get_long_term_access_token(self, route_id, token):
+        return self._validate_response(self._execute(route_id=route_id, payload=self._payload_get_token(), token=token))
+
+    def service_synchronous(self, route_id):
+        return self._validate_response(self._execute(route_id=route_id, payload={'TYPE': 2}))
+
+    def service_extend_synchronous(self, route_id, extend_code):
+        return self._validate_response(self._execute(route_id=route_id, params={'serviceCode': extend_code}))
+
+    def _payload_estimate_cost(self, order):
+        return {
+            'PRODUCT_WEIGHT': math.ceil(order.carrier_id.convert_weight(
+                order._get_estimated_weight(),
+                self.conn.provider.base_weight_unit
+            )),
+            'PRODUCT_PRICE': order.amount_total,
+            'ORDER_SERVICE_ADD': order.env.context.get('viettelpost_service_extend_code'),
+            'ORDER_SERVICE': order.env.context.get('viettelpost_service_code'),
+            'PRODUCT_TYPE': order.env.context.get('viettelpost_product_type'),
+            'NATIONAL_TYPE': order.env.context.get('viettelpost_national_type'),
+            'SENDER_ADDRESS': f'{order.warehouse_id.partner_id.shipping_address}',
+            'RECEIVER_ADDRESS': f'{order.partner_shipping_id.shipping_address}',
+        }
+
+    def estimate_cost(self, route_id, order):
+        return self._validate_response(self._execute(route_id=route_id, payload=self._payload_estimate_cost(order)))
 
     @staticmethod
-    def _payload_delivery_quotes(order) -> DeliveryQuotesRequest:
-        payload = {
-            'origin': {
-                'address': f'{order.warehouse_id.partner_id.shipping_address}'
-            },
-            'destination': {
-                'address': f'{order.partner_shipping_id.shipping_address}'
-            },
-            'packages': [{
-                'name': line.product_id.name,
-                'description': line.name,
-                'quantity': line.product_uom_qty,
-                'price': line.price_subtotal,
-                'dimensions': {
-                    'height': 0,
-                    'width': 0,
-                    'depth': 0,
-                    'weight': line.product_id.weight
-                }
-            } for line in order.order_line if not line.is_delivery and not line.is_service]
-        }
-        if order.env.context.get('grab_service_type'):
-            payload.update({'serviceType': order.env.context.get('grab_service_type')})
-        if order.env.context.get('grab_vehicle_type'):
-            payload.update({'vehicleType': order.env.context.get('grab_vehicle_type')})
-        return DeliveryQuotesRequest(**payload)
+    def _compute_quantity(lines):
+        quantity = 0
+        for line in lines:
+            quantity += line.quantity
+        return quantity
 
-    def get_delivery_quotes(self, route_id, order) -> DeliveryQuotesResponse:
-        return DeliveryQuotesResponse(**self._execute(route_id, self._payload_delivery_quotes(order)))
+    def _payload_create_order(self, picking):
+        sender_id = picking.picking_type_id.warehouse_id.partner_id
+        recipient_id = picking.partner_id
+        payload = {
+            'ORDER_NUMBER': picking.sale_id.name,
+            'ORDER_PAYMENT': picking.viettelpost_order_payment,
+            'ORDER_SERVICE_ADD': picking.viettelpost_service_extend_id.code or '',
+            'ORDER_SERVICE': picking.viettelpost_service_id.code,
+            'ORDER_VOUCHER': picking.promo_code or '',
+            'ORDER_NOTE': picking.remarks or '',
+            'NATIONAL_TYPE': picking.viettelpost_national_type,
+            'SENDER_FULLNAME': sender_id.name,
+            'SENDER_PHONE': sender_id.mobile or sender_id.phone,
+            'SENDER_ADDRESS': f'{sender_id.shipping_address}',
+            'RECEIVER_FULLNAME': recipient_id.name,
+            'RECEIVER_PHONE': recipient_id.mobile or recipient_id.phone,
+            'RECEIVER_ADDRESS': f'{recipient_id.shipping_address}',
+            'PRODUCT_WEIGHT': math.ceil(self.conn.provider.convert_weight(
+                picking._get_estimated_weight(),
+                self.conn.provider.base_weight_unit
+            )),
+            'PRODUCT_QUANTITY': self._compute_quantity(picking.move_ids),
+            'PRODUCT_PRICE': picking.sale_id.amount_total,
+            'PRODUCT_TYPE': picking.viettelpost_product_type,
+            'MONEY_COLLECTION': 0,
+            'MONEY_TOTAL': picking.sale_id.amount_total,
+            'LIST_ITEM': [{
+                'PRODUCT_NAME': line.product_id.name,
+                'PRODUCT_PRICE': line.product_id.list_price,
+                'PRODUCT_WEIGHT': line.product_id.weight,
+                'PRODUCT_QUANTITY': line.quantity
+            } for line in picking.move_line_ids_without_package]
+        }
+        if picking.cash_on_delivery and picking.cash_on_delivery_amount > 0.0:
+            payload['MONEY_COLLECTION'] = picking.cash_on_delivery_amount
+        return payload
+
+    def create_order(self, route_id, picking):
+        return self._validate_response(self._execute(route_id=route_id, payload=self._payload_create_order(picking)))
 
     @staticmethod
-    def _validate_picking(picking):
-        if not picking.partner_id.phone and not picking.partner_id.mobile:
-            raise UserError(_('The number phone of recipient is required.'))
-        if picking.promo_code and not picking.grab_payment_method:
-            raise UserError(_('You are using a promo code, please select a payment method. This is required.'))
-        # elif picking.grab_payer == 'RECIPIENT' and picking.grab_payment_method == 'CASHLESS':
-        #     raise UserError(_('Sending a RECIPIENT value for CASHLESS payments will result in an error.'))
-        elif picking.cash_on_delivery and picking.cash_on_delivery_amount <= 0.0:
-            raise UserError(_('The cash on delivery amount must be greater than 0.'))
-        elif picking.schedule_order and not picking.schedule_pickup_time_from:
-            raise UserError(_('You are using Scheduled for Order. Please select the pickup time from.'))
-        elif picking.schedule_order and not picking.schedule_pickup_time_to:
-            raise UserError(_('You are using Scheduled for Order. Please select the pickup time to.'))
-        elif picking.schedule_order and (picking.schedule_pickup_time_from >= picking.schedule_pickup_time_to):
-            raise UserError(_('The delivery time in the future must be greater than the present time.'))
+    def _payload_cancel_order(order):
+        return {'ORDER_NUMBER': order, 'TYPE': 4}
 
-    def _payload_create_delivery_request(self, picking):
-        self._validate_picking(picking)
-        payload = {
-            'merchantOrderID': picking.origin,
-            'serviceType': picking.grab_service_type,
-            'vehicleType': picking.grab_vehicle_type,
-            'codType': picking.grab_cod_type,
-            'paymentMethod': picking.grab_payment_method,
-            'payer': picking.grab_payer,
-            'highValue': picking.grab_high_value,
-            'packages': [{
-                'name': line.product_id.name,
-                'description': line.product_id.name,
-                'quantity': line.quantity,
-                'dimensions': {
-                    'height': 0,
-                    'width': 0,
-                    'depth': 0,
-                    'weight': line.product_id.weight
-                }
-            } for line in picking.move_ids],
-            'sender': {
-                'firstName': picking.picking_type_id.warehouse_id.partner_id.name,
-                'email': picking.picking_type_id.warehouse_id.partner_id.email or None,
-                'phone': picking.picking_type_id.warehouse_id.partner_id.phone
-            },
-            'recipient': {
-                'firstName': picking.partner_id.name,
-                'email': picking.partner_id.email or None,
-                'phone': picking.partner_id.phone
-            },
-            'origin': {
-                'address': picking.picking_type_id.warehouse_id.partner_id.shipping_address
-            },
-            'destination': {
-                'address': picking.partner_id.shipping_address
-            }
-        }
-        if picking.cash_on_delivery:
-            payload.update({'cashOnDelivery': {'amount': picking.cash_on_delivery_amount}})
-        if picking.schedule_order:
-            payload.update({
-                'schedule': {
-                    'pickupTimeFrom': datetime_to_rfc3339(picking.schedule_pickup_time_from, picking.env.user.tz),
-                    'pickupTimeTo': datetime_to_rfc3339(picking.schedule_pickup_time_to, picking.env.user.tz)
-                }
-            })
-        return CreateDeliveryRequest(**payload)
-
-    def create_delivery_request(self, route_id, picking) -> CreateDeliveryResponse:
-        return CreateDeliveryResponse(**self._execute(route_id, self._payload_create_delivery_request(picking)))
-
-    def cancel_delivery(self, route_id, carrier_tracking_ref: str):
-        self.conn.execute_restful(
-            url=f'''{URLBuilder.builder(
-                host=self.conn.provider.domain,
-                routes=[route_id.route]
-            )}/{carrier_tracking_ref}''',
-            headers=self._build_header(route_id),
-            method=route_id.method
-        )
+    def cancel_order(self, route_id, order):
+        self._execute(route_id=route_id, payload=self._payload_cancel_order(order))

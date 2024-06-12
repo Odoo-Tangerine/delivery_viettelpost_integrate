@@ -1,3 +1,4 @@
-from . import delivery_grab
+from . import delivery_viettelpost
 from . import stock_picking
-from . import res_config_settings
+from . import viettelpost_service
+from . import stock_package_type

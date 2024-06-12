@@ -1,61 +1,42 @@
 # -*- coding: utf-8 -*-
+from enum import Enum
 from typing import Final
-from pydantic_settings import BaseSettings
 
 
-class settings(BaseSettings):
-    host: Final[str] = 'https://partner-api.grab.com'
-    grab_code: Final[str] = 'grab'
-    staging_route: Final[str] = 'grab-express-sandbox'
-    production_route: Final[str] = 'grab-express'
+class settings(Enum):
+    domain_production: Final[str] = 'https://partner.viettelpost.vn'
+    domain_staging: Final[str] = 'https://partnerdev.viettelpost.vn'
+    tracking_url: Final[str] = 'https://viettelpost.com.vn/tra-cuu-hanh-trinh-don'
+    code: Final[str] = 'viettelpost'
 
-    tracking_url: Final[str] = 'https://partner-api.grab.com/tracking'
-    oauth_route_code: Final[str] = 'oauth_route'
-    get_quotes_route_code: Final[str] = 'get_delivery_quotes'
-    create_request_route_code: Final[str] = 'create_delivery_request'
-    cancel_request_route_code: Final[str] = 'cancel_delivery'
+    get_short_term_token_route: Final[str] = 'viettelpost_get_short_term_token'
+    get_long_term_token_route: Final[str] = 'viettelpost_get_long_term_token'
+    service_sync_route: Final[str] = 'viettelpost_service_sync'
+    service_extend_sync_route: Final[str] = 'viettelpost_service_extend_sync'
+    get_matching_service_route: Final[str] = 'viettelpost_get_matching_service'
+    estimate_cost_route: Final[str] = 'viettelpost_estimate_cost'
+    create_order_route: Final[str] = 'viettelpost_create_order'
+    update_order_route: Final[str] = 'viettelpost_update_order'
 
-    service_type: Final[list[tuple[str, str]]] = [
-        ('INSTANT', 'Instant'),
-        ('SAME_DAY', 'Same Day'),
-        ('BULK', 'Bulk')
+    product_type: Final[list[tuple[str, str]]] = [
+        ('TH', 'Letter'),
+        ('HH', 'Goods')
     ]
-    default_service_type: Final[str] = 'INSTANT'
+    default_product_type: Final[str] = 'HH'
 
-    vehicle_type: Final[list[tuple[str, str]]] = [
-        ('BIKE', 'Bike'),
-        ('CAR', 'Car'),
-        ('JUSTEXPRESS', 'Just Express'),
-        ('VAN', 'VAN'),
-        ('TRUCK', 'Truck'),
-        ('TRIKE', 'Trike'),
-        ('EBIKE', 'EBike'),
-        ('SUV', 'SUV'),
-        ('BOXPICKUPTRUCK', 'Box Pickup Truck'),
-        ('TRICYCLE', 'Tricycle'),
-        ('CYCLE', 'Cycle'),
-        ('FOOT', 'Foot'),
+    national_type: Final[list[tuple[str, str]]] = [
+        ('0', 'International'),
+        ('1', 'Domestic')
     ]
-    default_vehicle_type: Final[str] = 'BIKE'
+    default_national_type: Final[str] = '1'
 
-    payment_method: Final[list[tuple[str, str]]] = [
-        ('CASHLESS', 'Cashless'),
-        ('CASH', 'Cash')
+    order_payment: Final[list[tuple[str, str]]] = [
+        ('1', 'No collection'),
+        ('2', 'Collect money for goods and delivery'),
+        ('3', 'Collect money for goods'),
+        ('4', 'Collect money for delivery')
     ]
-    default_payment_method: Final[str] = 'CASHLESS'
-
-    payer: Final[list[tuple[str, str]]] = [
-        ('SENDER', 'Sender'),
-        ('RECIPIENT', 'Recipient')
-    ]
-    default_payer: Final[str] = 'SENDER'
-
-    cod_type: Final[list[tuple[str, str]]] = [
-        ('REGULAR', 'Regular'),
-        ('ADVANCED', 'Advanced')
-    ]
-
-    default_cod_type: Final[str] = 'REGULAR'
+    default_order_payment: Final[str] = '1'
 
     list_status_cancellation_allowed: Final[str] = ['IN_DELIVERY', 'FAILED', 'CANCELED', 'COMPLETED']
     status_completed: Final[str] = 'COMPLETED'

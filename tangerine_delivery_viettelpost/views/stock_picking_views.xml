@@ -1,23 +1,30 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <odoo>
-    <record id="view_picking_withcarrier_out_form_inherit_delivery_grab" model="ir.ui.view">
-        <field name="name">view.picking.withcarrier.out.form.inherit.delivery.grab</field>
+    <record id="view_picking_withcarrier_out_form_inherit_delivery_viettelpost" model="ir.ui.view">
+        <field name="name">view.picking.withcarrier.out.form.inherit.delivery.viettelpost</field>
         <field name="model">stock.picking</field>
         <field name="inherit_id" ref="tangerine_delivery_base.view_picking_withcarrier_out_form_inherit_delivery_base"/>
         <field name="arch" type="xml">
-            <xpath expr="//field[@name='cash_on_delivery']" position="before">
-                <field name="grab_service_type"
-                       required="delivery_type == 'grab'"
-                       invisible="delivery_type != 'grab'"
+            <xpath expr="//field[@name='promo_code']" position="before">
+                <field name="viettelpost_order_payment"
+                       required="delivery_type == 'viettelpost'"
+                       invisible="delivery_type != 'viettelpost'"
                 />
-                <field name="grab_payment_method" invisible="delivery_type != 'grab'"/>
-                <field name="grab_cod_type" invisible="delivery_type != 'grab'"/>
-                <field name="grab_payer" invisible="delivery_type != 'grab'"/>
-                <field name="grab_high_value" widget="boolean_toggle" invisible="delivery_type != 'grab'"/>
-            </xpath>
-            <xpath expr="//field[@name='driver_phone']" position="after">
-                <field name="grab_driver_license_plate" string="License Plate"/>
-                <field name="grab_driver_photo_url" string="Photo URL" widget="url"/>
+                <field name="viettelpost_product_type"
+                       required="delivery_type == 'viettelpost'"
+                       invisible="delivery_type != 'viettelpost'"
+                />
+                <field name="viettelpost_national_type"
+                       required="delivery_type == 'viettelpost'"
+                       invisible="delivery_type != 'viettelpost'"
+                />
+                <field name="viettelpost_service_id"
+                       required="delivery_type == 'viettelpost'"
+                       invisible="delivery_type != 'viettelpost'"
+                       domain="viettelpost_service_request_domain"
+                />
+                <field name="viettelpost_service_extend_id" invisible="delivery_type != 'viettelpost'"/>
+                <field name="viettelpost_service_request_domain" invisible="1"/>
             </xpath>
         </field>
     </record>

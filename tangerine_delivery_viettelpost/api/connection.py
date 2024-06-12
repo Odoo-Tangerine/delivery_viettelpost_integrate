@@ -23,16 +23,12 @@ class Connection:
                 response = requests.post(url=url, headers=headers, json=kwargs)
             elif method == 'GET':
                 response = requests.get(url=url, headers=headers, data=kwargs)
-            elif method == 'DELETE':
-                response = requests.delete(url=url, headers=headers, data=kwargs)
-            elif method == 'PUT':
-                response = requests.put(url=url, headers=headers, data=kwargs)
             else:
-                raise UserError(_(f'The Grab Express not support method: {method}'))
+                raise UserError(_(f'The Viettel Post not support method: {method}'))
             response.raise_for_status()
-            if response.status_code not in [status.HTTP_200_OK, status.HTTP_204_NO_CONTENT]:
+            if response.status_code not in [status.HTTP_200_OK.value, status.HTTP_204_NO_CONTENT.value]:
                 raise UserError(response.text)
-            if response.status_code == status.HTTP_204_NO_CONTENT:
+            if response.status_code == status.HTTP_204_NO_CONTENT.value:
                 return True
             result = response.json()
             return result
