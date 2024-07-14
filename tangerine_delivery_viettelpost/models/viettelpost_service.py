@@ -1,9 +1,9 @@
 import logging
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError
-from odoo.addons.tangerine_delivery_base.settings import utils
+from odoo.addons.tangerine_delivery_base.settings.utils import get_route_api
+from odoo.addons.tangerine_delivery_base.api.connection import Connection
 from ..settings.constants import settings
-from ..api.connection import Connection
 from ..api.client import Client
 
 _logger = logging.getLogger(__name__)
@@ -32,9 +32,11 @@ class ViettelPostService(models.Model):
         ])
         if not viettelpost_carrier_id:
             raise UserError(_('The carrier Viettelpost not found'))
-        client = Client(Connection(viettelpost_carrier_id))
-        route_id = utils.get_route_api(viettelpost_carrier_id, settings.service_sync_route.value)
-        result = client.service_synchronous(route_id)
+        client = Client(Connection(
+            viettelpost_carrier_id,
+            get_route_api(viettelpost_carrier_id, settings.service_sync_route.value)
+        ))
+        result = client.service_synchronous()
         service_exists = [
             rec.code for rec in self.search([('code', 'in', [service.get('SERVICE_CODE') for service in result])])
         ]
@@ -71,11 +73,13 @@ class ViettelPostServiceExtend(models.Model):
         if not viettelpost_carrier_id:
             raise UserError(_('The carrier Viettelpost not found'))
         data = self.env['viettelpost.service'].search([])
-        client = Client(Connection(viettelpost_carrier_id))
-        route_id = utils.get_route_api(viettelpost_carrier_id, settings.service_extend_sync_route.value)
+        client = Client(Connection(
+            viettelpost_carrier_id,
+            get_route_api(viettelpost_carrier_id, settings.service_extend_sync_route.value)
+        ))
         payload = []
         for rec in data:
-            result = client.service_extend_synchronous(route_id, rec.code)
+            result = client.service_extend_synchronous(rec.code)
             service_exists = [
                 rec.code for rec in self.search([
                     ('code', 'in', [service.get('SERVICE_CODE') for service in result]),
